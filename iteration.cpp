@@ -64,7 +64,7 @@ Polygon_2 convert_face_to_polygon(Face_handle *f, int bound) {
   // (We need this  because the CGAL::intersection function can, to the best of
   // our knowledge, not handle unbounded regions)
   //
-  // If the region is unbounded, we clip it by adding extra an vertex on each
+  // If the region is unbounded, we clip it by adding an extra vertex on each
   // ray. The 'bound' parameter controls 'how far' the vertex will be placed
 
   Polygon_2 p;
@@ -95,7 +95,7 @@ Polygon_2 convert_face_to_polygon(Face_handle *f, int bound) {
 
   } while (++ec != ec_start);
 
-  return p; //Polygon_2(p.cbegin(), p.cend());
+  return p;
 }
 
 
@@ -125,10 +125,10 @@ extract_poly(const CGAL::Polygon_with_holes_2<Kernel, Container> &poly) {
   // minkowski sum. However, we never encounter polygons with holes.
   
   if (poly.is_unbounded())
-    throw std::runtime_error("intersection is unbounded");
+    throw std::runtime_error("polygon is unbounded");
 
   if (poly.has_holes())
-    throw std::runtime_error("intersection has holes");
+    throw std::runtime_error("polygon has holes");
 
   return poly.outer_boundary();
 }
@@ -165,7 +165,7 @@ Polygon_2 g(const CGAL::Polygon_2<Kernel, Container> &A,
 
   std::vector<Polygon_2> plist;
 
-  // for each c, compute W_c = (chS + A) ∪ V(c) - c
+  // for each c, compute W_c = (chS + A) ∩ V(c) - c
   for (auto c = voronoi.sites_begin(); c != voronoi.sites_end(); ++c ) {
 
     Transformation translate_by_c(CGAL::TRANSLATION, Vector_2(*c,Point_2(0,0)));
