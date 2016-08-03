@@ -7,6 +7,7 @@ project( example )
 cmake_minimum_required(VERSION 2.8.11)
 set(CMAKE_CXX_FLAGS "-std=c++1y -stdlib=libc++")
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR})
 
 # CGAL and its components
 find_package( CGAL QUIET COMPONENTS Core )
