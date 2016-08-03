@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <stdexcept>
+#include <algorithm>
 // includes for defining the Voronoi diagram adaptor
 
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
@@ -59,7 +60,7 @@ void print_polygon (const CGAL::Polygon_2<Kernel, Container>& P)
   std::cout << "} " << std::endl;
 }
 
-Polygon_2 convert_face_to_polygon(Face_handle *f, int bound) {
+Polygon_2 convert_face_to_polygon(Face_handle f, int bound) {
   // Convert a voronoi region to a polygon of type Polygon_2
   // (We need this  because the CGAL::intersection function can, to the best of
   // our knowledge, not handle unbounded regions)
@@ -69,7 +70,7 @@ Polygon_2 convert_face_to_polygon(Face_handle *f, int bound) {
 
   Polygon_2 p;
 
-  Ccb_halfedge_circulator ec_start = (*f)->ccb();
+  Ccb_halfedge_circulator ec_start = f->ccb();
   Ccb_halfedge_circulator ec = ec_start;
 
   do {
@@ -163,19 +164,34 @@ Polygon_2 g(const CGAL::Polygon_2<Kernel, Container> &A,
   else   
    chS_plus_A = extract_poly(CGAL::minkowski_sum_2(chS, A));
 
+
+  // ensure that the union of the clipped voronoi regions cover chS+A
+
+  auto max_abs_coord = [](const auto &point) {
+    return CGAL::max(CGAL::abs(point.x()), CGAL::abs(point.y()));
+  };
+  auto it =
+      std::max_element(chS_plus_A.vertices_begin(), chS_plus_A.vertices_end(),
+                       [&max_abs_coord](const auto &a, const auto &b) {
+        return (max_abs_coord(a) < max_abs_coord(b));
+      });
+
+  int bound = 100.0 * CGAL::to_double(max_abs_coord(*it));
+
   std::vector<Polygon_2> plist;
 
   // for each c, compute W_c = (chS + A) ∩ V(c) - c
-  for (auto c = voronoi.sites_begin(); c != voronoi.sites_end(); ++c ) {
+  // where V(c) is the voronoi face belonging to delaunay-vertex ('site') c
+  //
+  // (however, we iterate over the faces and get c via the .dual() method)
+  for (auto face_it = voronoi.faces_begin(); face_it != voronoi.faces_end();
+       ++face_it) {
 
-    Transformation translate_by_c(CGAL::TRANSLATION, Vector_2(*c,Point_2(0,0)));
-    auto result = voronoi.locate(*c);
-    if (Face_handle *f = boost::get<Face_handle>(&result)) {
+    auto c = face_it->dual()->point();
+    Transformation translate_by_c(CGAL::TRANSLATION, Vector_2(c, Point_2(0, 0)));
+    auto intersected_region = simple_intersect(chS_plus_A, convert_face_to_polygon(*face_it, bound));
 
-      auto intersected_region =
-          simple_intersect(chS_plus_A, convert_face_to_polygon(f, 1000));
-      plist.push_back(transform(translate_by_c, intersected_region));
-    }
+    plist.push_back(transform(translate_by_c, intersected_region));
   }
 
   // take the union over the W_c sets for all c
