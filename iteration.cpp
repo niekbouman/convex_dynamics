@@ -309,14 +309,7 @@ Polygon_2 g(const CGAL::Polygon_2<Kernel, Container> &A,
   }
 
   // take the union over the W_c sets for all c
-  std::list<Polygon_with_holes_2> _union_result;
-  CGAL::join(plist.cbegin(), plist.cend(), std::back_inserter(_union_result));
-
-  if (_union_result.size() != 1)
-    throw std::runtime_error("union is disconnected");
-
-  const auto &shape = *(_union_result.begin());
-  auto union_result = extract_poly(shape);
+  auto union_result = simple_union(plist);
 
   // convex hull
   Polygon_2 convex_result;
