@@ -1,5 +1,7 @@
 // standard includes
 #include <iostream>
+#include <utility>
+
 #include <fstream>
 #include <cassert>
 #include <cmath>
@@ -19,15 +21,24 @@
 #include <CGAL/Polygon_2.h>
 //#include <CGAL/basic.h>
 #include <CGAL/Minkowski_sum_2.h>
+#include <CGAL/Direction_2.h>
 
 //#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/ch_graham_andrew.h>
 #include <CGAL/ch_melkman.h>
 #include <CGAL/Aff_transformation_2.h>
 
+#include "json.hpp" // nlohmann's json lib
+
 // typedefs for defining the adaptor
 // typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
-typedef CGAL::Exact_predicates_exact_constructions_kernel K;
+// #include <CGAL/Simple_homogeneous.h>
+#include <CGAL/Gmpz.h>
+#include <CGAL/Gmpq.h>
+
+typedef CGAL::Simple_cartesian<CGAL::Gmpq> K; 
+
+//typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 typedef CGAL::Delaunay_triangulation_2<K> DT;
 typedef CGAL::Delaunay_triangulation_adaptation_traits_2<DT> AT;
 typedef CGAL::Delaunay_triangulation_caching_degeneracy_removal_policy_2<DT> AP;
@@ -45,8 +56,26 @@ typedef VD::Ccb_halfedge_circulator Ccb_halfedge_circulator;
 typedef CGAL::Aff_transformation_2<K> Transformation;
 typedef CGAL::Polygon_2<K> Polygon_2;
 typedef CGAL::Vector_2<K> Vector_2;
+typedef CGAL::Direction_2<K> Direction_2;
 typedef CGAL::Polygon_with_holes_2<K> Polygon_with_holes_2;
 typedef std::list<Polygon_with_holes_2> Pwh_list_2;
+
+CGAL::Gmpq roundQ(CGAL::Gmpq x, int precision) {
+
+  // try to round the input to a fraction with precision as denominator
+  
+  auto n = std::min(x.numerator().approximate_decimal_length(),
+                    x.denominator().approximate_decimal_length());
+  if (n < 20)
+    return x;
+
+  auto z = (precision * x).to_double();
+  auto rz = std::round(z);
+
+  if (z - rz < 1e-11)
+    return CGAL::Gmpq(rz, precision);
+  return x;
+}
 
 template<class Kernel, class Container>
 void print_polygon (const CGAL::Polygon_2<Kernel, Container>& P)
@@ -55,7 +84,7 @@ void print_polygon (const CGAL::Polygon_2<Kernel, Container>& P)
   std::cout << " " << P.size() << " vertices: {";
   for (vit = P.vertices_begin(); vit != P.vertices_end(); ++vit){
     if(vit != P.vertices_begin()) std::cout << ",";
-    std::cout << "{" << (*vit).x() << ',' << (*vit).y() << "}";
+    std::cout << "{" << (*vit).x().to_double() << ',' << (*vit).y().to_double() << "}";
   }
   std::cout << "} " << std::endl;
 }
@@ -79,17 +108,19 @@ Polygon_2 convert_face_to_polygon(Face_handle f, int bound) {
                  ec->face()->dual()->point());
       auto vp = v.perpendicular(CGAL::CLOCKWISE);
 
+      auto t = bound;
+
       if (vp.squared_length() < 1){
-        bound *= int(1.0 / std::sqrt( CGAL::to_double(vp.squared_length())));
-        // make sure that the extension will be  not too short
+        t *= int(1.0 / std::sqrt( CGAL::to_double(vp.squared_length())));
+        // make sure that the extension will be not too short
       }
 
       if (ec->has_target()) {
-        p.push_back(ec->target()->point() - bound * vp);
+        p.push_back(ec->target()->point() - t * vp);
         p.push_back(ec->target()->point());
 
       } else
-        p.push_back(ec->source()->point() + bound * vp);
+        p.push_back(ec->source()->point() + t * vp);
     }
     else
       p.push_back(ec->target()->point());
@@ -152,6 +183,23 @@ Polygon_2 simple_intersect(const CGAL::Polygon_2<Kernel, Container> &PA,
 }
 
 template <class Kernel, class Container>
+Polygon_2 simple_union(const std::vector<CGAL::Polygon_2<Kernel, Container>> &input) {
+  // union of a list of overlapping polygons
+
+  std::list<Polygon_with_holes_2> _union_result;
+  CGAL::join(input.cbegin(), input.cend(), std::back_inserter(_union_result));
+
+  if (_union_result.size() != 1)
+    throw std::runtime_error("union is disconnected");
+
+  const auto &shape = *(_union_result.begin());
+  return extract_poly(shape);
+
+}
+
+
+
+template <class Kernel, class Container>
 Polygon_2 g(const CGAL::Polygon_2<Kernel, Container> &A,
        const CGAL::Polygon_2<Kernel, Container> &chS, const VD &voronoi) {
   // the main iteration
@@ -211,33 +259,98 @@ Polygon_2 g(const CGAL::Polygon_2<Kernel, Container> &A,
   return convex_result;
 }
 
+template <class Kernel, class Container>
+Polygon_2 round_vertices(const CGAL::Polygon_2<Kernel, Container> &P,int precision) {
+  Polygon_2 res;
+  for (auto i = P.vertices_begin(); i != P.vertices_end(); ++i) {
+    auto p = *i;
+    res.push_back(Point_2(roundQ(p.x(),precision), roundQ(p.y(),precision)));
+  }
+  return res;
+}
 
-int main()
+template <class Kernel, class Container>
+Polygon_2
+remove_redundant_vertices(const CGAL::Polygon_2<Kernel, Container> &P) {
+  Polygon_2 reduced;
+  auto i = P.vertices_circulator();
+  auto start = i;
+  do {
+    if (!CGAL::collinear(*(i - 1), *i, *(i + 1)))
+      reduced.push_back(*i);
+  } while (++i != start);
+  return reduced;
+}
+
+int main(int argc, char* argv[])
 {
 
-  // read points and build Voronoi diagram
-  std::ifstream ifs("points.cin");
-  assert( ifs );
-  VD vd;
-  Site_2 t;
-  while ( ifs >> t ) { vd.insert(t); }
-  ifs.close();
-  assert( vd.is_valid() );
+  using json = nlohmann::json;
 
-  // compute convex hull of the points
-  Polygon_2 chS;
-  CGAL::ch_graham_andrew(vd.sites_begin(),vd.sites_end(), std::back_inserter(chS));
+  if(argc < 2)
+  {
+    std::cerr << "Usage: " << argv[0] << " <points file>" << std::endl;
+    return 1;
+  }
+
+
+
+  // read points and build Voronoi diagram
+  std::ifstream ifs(argv[1]);
+  assert( ifs );
+
+  json j;
+  ifs >> j;
+  ifs.close();
+
+  std::cout << "Read " << j.size() << " point set(s) from "<< argv[1] << "." << std::endl;
+
+ 
+  std::vector<std::pair<Polygon_2,VD>> cvs; // convex hulls and voronoi diagrams 
+  for (auto& point_set : j)
+  {
+
+    VD vd;
+    for (const auto &coord_pair : point_set) {
+      Point_2 p(coord_pair[0].get<int>(), coord_pair[1].get<int>());
+      vd.insert(p);
+    }
+
+    assert(vd.is_valid());
+    Polygon_2 chS;
+    CGAL::ch_graham_andrew(vd.sites_begin(), vd.sites_end(),
+                           std::back_inserter(chS));
+
+
+    cvs.emplace_back(std::make_pair(chS,vd));
+  }
 
   Polygon_2 A;
-  A.push_back(Point_2(0,0));
+  A.push_back(Point_2(0, 0));
   Polygon_2 Aprev;
 
   // run fixed point
-  while(A != Aprev) {
+  while (A != Aprev) {
     Aprev = A;
-    A = g(A,chS,vd);
+
+    std::vector<Polygon_2> plist;
+    for (auto &p : cvs) {
+
+      plist.push_back(g(A, p.first, p.second));
+    }
+
+    Polygon_2 union_result;
+    union_result = round_vertices(simple_union(plist), 100);
+
+    Polygon_2 convex_result;
+    CGAL::ch_melkman(union_result.vertices_begin(), union_result.vertices_end(),
+                     std::back_inserter(convex_result));
+
+    A = convex_result;
     print_polygon(A);
-  } 
+  }
 
   return 0;
 }
+
+
