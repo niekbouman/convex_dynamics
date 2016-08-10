@@ -7,6 +7,8 @@
 #include <cmath>
 #include <stdexcept>
 #include <algorithm>
+#include <set>
+#include <utility>
 // includes for defining the Voronoi diagram adaptor
 
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
@@ -60,10 +62,77 @@ typedef CGAL::Direction_2<K> Direction_2;
 typedef CGAL::Polygon_with_holes_2<K> Polygon_with_holes_2;
 typedef std::list<Polygon_with_holes_2> Pwh_list_2;
 
+auto build_nice_fraction_list()
+{
+  // build a set of nice fractions in the interval (0,1],
+  // like 1/10, 1/6, 1/3, 1/2, 2/3, etc.
+  
+  std::set<CGAL::Gmpq>  set;
+
+  auto max_denom = 10;
+
+  set.insert(1);
+
+  for (auto denominator = 2; denominator <= max_denom ; ++denominator) 
+  for (auto numerator = 1; numerator < denominator; ++numerator)
+    set.insert(CGAL::Gmpq( numerator, denominator));
+
+  return set;
+}
+
+auto find_nearest_nice_fraction(const CGAL::Gmpq &val,
+                                const std::set<CGAL::Gmpq> &fracset) {
+
+  // returns a pair: (nearest 'nice' fraction, distance)
+  
+  assert(fracset.size() >= 2);
+
+  auto it = fracset.lower_bound(val);
+
+  if (it == fracset.end())
+    --it;
+
+  auto dright = CGAL::abs(*it - val);
+
+  if (it != fracset.begin()) {
+    auto dleft = CGAL::abs(*(--it) - val);
+    if (dleft < dright)
+      return std::make_pair(*it, dleft);
+    else
+      it++;
+  }
+  return std::make_pair(*it, dright);
+}
+
+CGAL::Gmpq roundNice(const CGAL::Gmpq& x, const std::set<CGAL::Gmpq>& fracset, double eps) {
+
+  // round the input to a "nice" fraction if it is eps-close (in absolute sense)
+  // to such a fraction
+
+  auto n = std::min(x.numerator().approximate_decimal_length(),
+                    x.denominator().approximate_decimal_length());
+  if (n < 20)
+    return x;
+
+  CGAL::Gmpz integral_part(x.to_double());
+
+  auto frac = x - integral_part;
+
+  auto res = find_nearest_nice_fraction(frac,fracset);
+
+  if (res.second.to_double() < eps) {
+    return integral_part + res.first;
+  }
+  return x;
+}
+
+
+
 CGAL::Gmpq roundQ(CGAL::Gmpq x, int precision) {
 
   // try to round the input to a fraction with precision as denominator
-  
+  //
+  // (currently not used)
   auto n = std::min(x.numerator().approximate_decimal_length(),
                     x.denominator().approximate_decimal_length());
   if (n < 20)
@@ -84,7 +153,7 @@ void print_polygon (const CGAL::Polygon_2<Kernel, Container>& P)
   std::cout << " " << P.size() << " vertices: {";
   for (vit = P.vertices_begin(); vit != P.vertices_end(); ++vit){
     if(vit != P.vertices_begin()) std::cout << ",";
-    std::cout << "{" << (*vit).x().to_double() << ',' << (*vit).y().to_double() << "}";
+    std::cout << "{" << (*vit).x() << ',' << (*vit).y() << "}";
   }
   std::cout << "} " << std::endl;
 }
@@ -129,7 +198,6 @@ Polygon_2 convert_face_to_polygon(Face_handle f, int bound) {
 
   return p;
 }
-
 
 template<class Kernel, class Container>
 void print_polygon_with_holes(const CGAL::Polygon_with_holes_2<Kernel, Container> & pwh)
@@ -196,8 +264,6 @@ Polygon_2 simple_union(const std::vector<CGAL::Polygon_2<Kernel, Container>> &in
   return extract_poly(shape);
 
 }
-
-
 
 template <class Kernel, class Container>
 Polygon_2 g(const CGAL::Polygon_2<Kernel, Container> &A,
@@ -270,8 +336,20 @@ Polygon_2 round_vertices(const CGAL::Polygon_2<Kernel, Container> &P,int precisi
 }
 
 template <class Kernel, class Container>
+Polygon_2 round_vertices2(const CGAL::Polygon_2<Kernel, Container> &P,const std::set<CGAL::Gmpq>& fracset) {
+  Polygon_2 res;
+  for (auto i = P.vertices_begin(); i != P.vertices_end(); ++i) {
+    auto p = *i;
+    auto error = 1e-8;
+    res.push_back(Point_2(roundNice(p.x(),fracset,error), roundNice(p.y(),fracset,error)));
+  }
+  return res;
+}
+
+template <class Kernel, class Container>
 Polygon_2
 remove_redundant_vertices(const CGAL::Polygon_2<Kernel, Container> &P) {
+  // currently not used
   Polygon_2 reduced;
   auto i = P.vertices_circulator();
   auto start = i;
@@ -282,9 +360,72 @@ remove_redundant_vertices(const CGAL::Polygon_2<Kernel, Container> &P) {
   return reduced;
 }
 
-int main(int argc, char* argv[])
+CGAL::Gmpq get_frac(const nlohmann::json &j) {
+  if (j.is_string())
+    return j.get<std::string>();
+  else
+    return j.get<int>();
+}
+
+auto precompute_convex_hulls_and_voronoi_diagrams(const nlohmann::json &user_input)
 {
 
+  std::vector<std::pair<Polygon_2,VD>> cvs; // convex hulls and voronoi diagrams 
+
+  for (auto& point_set : user_input["point_sets"])
+  {
+
+    VD vd;
+    for (const auto &coord_pair : point_set) {
+      Point_2 p(get_frac(coord_pair[0]), get_frac(coord_pair[1]));
+      vd.insert(p);
+    }
+
+    assert(vd.is_valid());
+    Polygon_2 chS;
+    CGAL::ch_graham_andrew(vd.sites_begin(), vd.sites_end(),
+                           std::back_inserter(chS));
+
+    cvs.emplace_back(std::make_pair(chS,vd));
+  }
+
+  return cvs;
+}
+
+
+void echo_parsed_input(const std::vector<std::pair<Polygon_2,VD>>& cvs)
+{
+  auto sz = cvs.size();
+  std::cout << "Read " << sz << " point " << ((sz==1) ? "set" : "sets") << ":" << std::endl;
+
+  for (const auto& pair : cvs)
+  {
+    auto vd = pair.second;
+    Polygon_2 P;
+    for (auto it = vd.sites_begin(); it != vd.sites_end(); ++it)
+      P.push_back(*it);
+    print_polygon(P);
+  }
+}
+
+Polygon_2 parse_or_create_initial_set(const nlohmann::json &user_input)
+{
+  Polygon_2 A;
+  if (user_input.count("A") == 1){
+    for (const auto &coord_pair :user_input["A"])
+    {
+      Point_2 p(get_frac(coord_pair[0]), get_frac(coord_pair[1]));
+      A.push_back(p);
+    }
+  }
+  else
+    A.push_back(Point_2(0, 0));
+
+  return A;
+}
+
+int main(int argc, char* argv[])
+{
   using json = nlohmann::json;
 
   if(argc < 2)
@@ -292,8 +433,6 @@ int main(int argc, char* argv[])
     std::cerr << "Usage: " << argv[0] << " <points file>" << std::endl;
     return 1;
   }
-
-
 
   // read points and build Voronoi diagram
   std::ifstream ifs(argv[1]);
@@ -303,33 +442,21 @@ int main(int argc, char* argv[])
   ifs >> j;
   ifs.close();
 
-  std::cout << "Read " << j.size() << " point set(s) from "<< argv[1] << "." << std::endl;
+  auto cvs = precompute_convex_hulls_and_voronoi_diagrams(j); // convex hulls and voronoi diagrams 
+  echo_parsed_input(cvs);
+  
+  auto A = parse_or_create_initial_set(j);
+  std::cout << "We will use the following polygon as starting set." << std::endl;
+  print_polygon(A);
 
- 
-  std::vector<std::pair<Polygon_2,VD>> cvs; // convex hulls and voronoi diagrams 
-  for (auto& point_set : j)
-  {
-
-    VD vd;
-    for (const auto &coord_pair : point_set) {
-      Point_2 p(coord_pair[0].get<int>(), coord_pair[1].get<int>());
-      vd.insert(p);
-    }
-
-    assert(vd.is_valid());
-    Polygon_2 chS;
-    CGAL::ch_graham_andrew(vd.sites_begin(), vd.sites_end(),
-                           std::back_inserter(chS));
-
-
-    cvs.emplace_back(std::make_pair(chS,vd));
-  }
-
-  Polygon_2 A;
-  A.push_back(Point_2(0, 0));
   Polygon_2 Aprev;
 
+  // needed for rounding
+  auto s = build_nice_fraction_list();
+
   // run fixed point
+  std::cout << "Starting fixed point iteration..." << std::endl;
+  auto iter = 0; 
   while (A != Aprev) {
     Aprev = A;
 
@@ -340,15 +467,19 @@ int main(int argc, char* argv[])
     }
 
     Polygon_2 union_result;
-    union_result = round_vertices(simple_union(plist), 100);
+    union_result = round_vertices2(simple_union(plist), s);
 
     Polygon_2 convex_result;
     CGAL::ch_melkman(union_result.vertices_begin(), union_result.vertices_end(),
                      std::back_inserter(convex_result));
 
     A = convex_result;
+    iter++;
     print_polygon(A);
   }
+
+  std::cout << "Found invariant set after " << iter
+            << ((iter == 1) ? " iteration." : " iterations.") << std::endl;
 
   return 0;
 }
