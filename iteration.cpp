@@ -69,8 +69,9 @@ auto build_nice_fraction_list()
   
   std::set<CGAL::Gmpq>  set;
 
-  auto max_denom = 10;
+  auto max_denom = 30;
 
+  set.insert(0);
   set.insert(1);
 
   for (auto denominator = 2; denominator <= max_denom ; ++denominator) 
@@ -109,7 +110,7 @@ CGAL::Gmpq roundNice(const CGAL::Gmpq& x, const std::set<CGAL::Gmpq>& fracset, d
   // round the input to a "nice" fraction if it is eps-close (in absolute sense)
   // to such a fraction
 
-  auto n = std::min(x.numerator().approximate_decimal_length(),
+  auto n = std::max(x.numerator().approximate_decimal_length(),
                     x.denominator().approximate_decimal_length());
   if (n < 20)
     return x;
@@ -118,10 +119,10 @@ CGAL::Gmpq roundNice(const CGAL::Gmpq& x, const std::set<CGAL::Gmpq>& fracset, d
 
   auto frac = x - integral_part;
 
-  auto res = find_nearest_nice_fraction(frac,fracset);
+  auto res = find_nearest_nice_fraction(CGAL::abs(frac),fracset);
 
   if (res.second.to_double() < eps) {
-    return integral_part + res.first;
+    return integral_part + CGAL::sign(frac) * res.first;
   }
   return x;
 }
@@ -466,13 +467,20 @@ int main(int argc, char* argv[])
     CGAL::ch_melkman(union_result.vertices_begin(), union_result.vertices_end(),
                      std::back_inserter(convex_result));
 
+    //A = union_result;
     A = convex_result;
     iter++;
-    print_polygon(A);
+
+    if (iter % 100 == 0) {
+      std::cout << "iteration: " << iter << std::endl;
+      print_polygon(A);
+    }
   }
 
   std::cout << "Found invariant set after " << iter
             << ((iter == 1) ? " iteration." : " iterations.") << std::endl;
+
+  print_polygon(A);
 
   return 0;
 }
