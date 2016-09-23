@@ -454,14 +454,20 @@ int main(int argc, char* argv[])
   while (A != Aprev) {
     Aprev = A;
 
+    Polygon_2 roundedA;
+    roundedA = round_vertices2(A,s);
+    // apply rounding here, so that the rounding operation cannot interfere with the check for invariance
+    // (the stopping criterion)
+
     std::vector<Polygon_2> plist;
     for (auto &p : cvs) {
 
-      plist.push_back(g(A, p.first, p.second));
+      plist.push_back(g(roundedA, p.first, p.second));
     }
 
     Polygon_2 union_result;
-    union_result = round_vertices2(simple_union(plist), s);
+    //union_result = round_vertices2(simple_union(plist), s);
+    union_result = simple_union(plist);
 
     Polygon_2 convex_result;
     CGAL::ch_melkman(union_result.vertices_begin(), union_result.vertices_end(),
