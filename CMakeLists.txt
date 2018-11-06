@@ -10,7 +10,7 @@ set(CMAKE_CXX_FLAGS "-std=c++1y -stdlib=libc++")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR})
 
 # CGAL and its components
-find_package( CGAL QUIET COMPONENTS Core )
+find_package( CGAL REQUIRED COMPONENTS Core )
 
 if ( NOT CGAL_FOUND )
 
@@ -50,10 +50,10 @@ include_directories( BEFORE ../include )
 # Creating entries for target: example
 # ############################
 
-add_executable( iter  iteration.cpp )
+add_executable( iter  iteration.cpp polygon.cpp rounding.cpp)
 
 add_to_cached_list( CGAL_EXECUTABLE_TARGETS iter )
 
 # Link the executable to CGAL and third-party libraries
-target_link_libraries(iter   ${CGAL_LIBRARIES} ${CGAL_3RD_PARTY_LIBRARIES} )
+target_link_libraries(iter  ${CGAL_LIBRARIES} ${CGAL_3RD_PARTY_LIBRARIES} )
 

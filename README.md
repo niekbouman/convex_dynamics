@@ -15,11 +15,24 @@ Example: below we have a collection of three point sets:
 ```
 Save this in a file, and run `./iter <filename>`
 
-Optionally, the initial set can be specified with key "A":
-```
-{
- "A":[[1,1],[-1,1],[-1,-1],[1,-1]],
- "point_sets":[...] 
-}
-```
-If "A" is omitted, the singleton set [0,0] is used.
+## Options
+The following options can be specified:
+ - "iteration" : specify which iteration to use:
+   - "g" : the G-iteration (default)
+   - "G" : the convexified G-iteration
+   - "f" : the F-iteration
+   - "F" : the convexified F-iteration
+ - "A" : the initial set to use 
+   For example,
+   ```
+   {
+     "A":[[1,1],[-1,1],[-1,-1],[1,-1]],
+     "point_sets":[...] 
+   }
+   ```
+   If "A" is omitted, the singleton set [0,0] is used for g and G iteration, 
+   while the convex hull of the first point set is used for the f and F iterations.
+
+ - "digit_threshold" : threshold specifying how many digits the numerator or denominator of a vertex coordinate should have in order to enable coefficient rounding 
+ - "rounding_error" : round a coordinate when it is within rounding_error from a small fraction  
+
