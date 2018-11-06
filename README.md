@@ -16,13 +16,22 @@ Example: below we have a collection of three point sets:
 Save this in a file, and run `./iter <filename>`
 
 ## Options
-The following options can be specified:
+The following options can be specified in the JSON object:
  - "iteration" : specify which iteration to use:
    - "g" : the G-iteration (default)
    - "G" : the convexified G-iteration
    - "f" : the F-iteration
    - "F" : the convexified F-iteration
+   
+   For example,
+   ```
+   {
+     "iteration":"G",
+     "point_sets":[...] 
+   }
+   ```
  - "A" : the initial set to use 
+
    For example,
    ```
    {
@@ -30,9 +39,9 @@ The following options can be specified:
      "point_sets":[...] 
    }
    ```
-   If "A" is omitted, the singleton set [0,0] is used for g and G iteration, 
-   while the convex hull of the first point set is used for the f and F iterations.
+   
+   If "A" is omitted, the singleton set [0,0] is used for the "g" and "G" iterations, 
+   while the convex hull of the first point set is used for the "f" and "F" iterations.
 
- - "digit_threshold" : threshold specifying how many digits the numerator or denominator of a vertex coordinate should have in order to enable coefficient rounding 
- - "rounding_error" : round a coordinate when it is within rounding_error from a small fraction  
-
+ - "digit_threshold" : threshold specifying how many digits the numerator or denominator of a vertex coordinate should have in order to enable coefficient rounding (defaults to 10)
+ - "rounding_error" : round a coordinate when it is within rounding_error from a small fraction (defaults to 1e-8)
